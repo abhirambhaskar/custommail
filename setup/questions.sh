@@ -1,28 +1,23 @@
 if [ -z "${NONINTERACTIVE:-}" ]; then
-	# Install 'dialog' so we can ask the user questions. The original motivation for
-	# this was being able to ask the user for input even if stdin has been redirected,
-	# e.g. if we piped a bootstrapping install script to bash to get started. In that
-	# case, the nifty '[ -t 0 ]' test won't work. But with Vagrant we must suppress so we
-	# use a shell flag instead. Really suppress any output from installing dialog.
-	#
-	# Also install dependencies needed to validate the email address.
-	if [ ! -f /usr/bin/dialog ] || [ ! -f /usr/bin/python3 ] || [ ! -f /usr/bin/pip3 ]; then
-		echo Installing packages needed for setup...
-		apt-get -q -q update
-		apt_get_quiet install dialog python3 python3-pip  || exit 1
-	fi
+    # Check for necessary files and install missing packages
+    if [ ! -f /usr/bin/dialog ] || [ ! -f /usr/bin/python3 ] || [ ! -f /usr/bin/pip3 ]; then
+        echo "Installing packages needed for setup..."
+        apt-get -q -q update
+        apt-get -q -q install dialog python3 python3-pip || exit 1
+    fi
 
-	# Installing email_validator is repeated in setup/management.sh, but in setup/management.sh
-	# we install it inside a virtualenv. In this script, we don't have the virtualenv yet
-	# so we install the python package globally.
-	hide_output pip3 install "email_validator>=1.0.0" || exit 1
+    # Install the email_validator globally if not in a virtualenv
+    hide_output pip3 install "email_validator>=1.0.0" || exit 1
 
-	message_box "Mail-in-a-Box Installation" \
-		"Hello and thanks for deploying a Mail-in-a-Box!
-		\n\nI'm going to ask you a few questions.
-		\n\nTo change your answers later, just run 'sudo mailinabox' from the command line.
-		\n\nNOTE: You should only install this on a brand new Ubuntu installation 100% dedicated to Mail-in-a-Box. Mail-in-a-Box will, for example, remove apache2."
+    # Replace the message_box with echo commands
+    echo "Mail-in-a-Box Installation"
+    echo "Hello and thanks for deploying a Mail-in-a-Box!"
+    echo -e "\nI'm going to ask you a few questions."
+    echo -e "\nTo change your answers later, just run 'sudo mailinabox' from the command line."
+    echo -e "\nNOTE: You should only install this on a brand new Ubuntu installation 100% dedicated to Mail-in-a-Box."
+    echo "Mail-in-a-Box will, for example, remove apache2."
 fi
+
 
 # The box needs a name.
 if [ -z "${PRIMARY_HOSTNAME:-}" ]; then
@@ -35,52 +30,51 @@ if [ -z "${PRIMARY_HOSTNAME:-}" ]; then
 
 		# This is the first run. Ask the user for his email address so we can
 		# provide the best default for the box's hostname.
-		input_box "Your Email Address" \
-"What email address are you setting this box up to manage?
-\n\nThe part after the @-sign must be a domain name or subdomain
-that you control. You can add other email addresses to this
-box later (including email addresses on other domain names
-or subdomains you control).
-\n\nWe've guessed an email address. Backspace it and type in what
-you really want.
-\n\nEmail Address:" \
-			"me@$DEFAULT_DOMAIN_GUESS" \
-			EMAIL_ADDR
+		echo -e "What email address are you setting this box up to manage?\n"
+		echo -e "The part after the @-sign must be a domain name or subdomain that you control."
+		echo -e "You can add other email addresses to this box later (including email addresses on other domain names or subdomains you control).\n"
+		echo -n "Please enter your email address [me@$DEFAULT_DOMAIN_GUESS]: "
+		read EMAIL_ADDR
 
 		if [ -z "$EMAIL_ADDR" ]; then
-			# user hit ESC/cancel
-			exit
+			echo "Email address is required. Exiting."
+			exit 1
 		fi
-		while ! python3 management/mailconfig.py validate-email "$EMAIL_ADDR"
-		do
-			input_box "Your Email Address" \
-				"That's not a valid email address.\n\nWhat email address are you setting this box up to manage?" \
-				$EMAIL_ADDR \
-				EMAIL_ADDR
+
+		while ! python3 management/mailconfig.py validate-email "$EMAIL_ADDR"; do
+			echo -n "That's not a valid email address. Please enter a valid email address: "
+			read EMAIL_ADDR
 			if [ -z "$EMAIL_ADDR" ]; then
-				# user hit ESC/cancel
-				exit
+				echo "Email address is required. Exiting."
+				exit 1
 			fi
 		done
 
 		# Take the part after the @-sign as the user's domain name, and add
 		# 'box.' to the beginning to create a default hostname for this machine.
-		DEFAULT_PRIMARY_HOSTNAME=box.$(echo $EMAIL_ADDR | sed 's/.*@//')
+		DEFAULT_PRIMARY_HOSTNAME=webmail.$(echo $EMAIL_ADDR | sed 's/.*@//')
 	fi
 
-	input_box "Hostname" \
-"This box needs a name, called a 'hostname'. The name will form a part of the box's web address.
-\n\nWe recommend that the name be a subdomain of the domain in your email
-address, so we're suggesting $DEFAULT_PRIMARY_HOSTNAME.
-\n\nYou can change it, but we recommend you don't.
-\n\nHostname:" \
-		$DEFAULT_PRIMARY_HOSTNAME \
-		PRIMARY_HOSTNAME
+	# Print instructions for the user
+	echo "This box needs a name, called a 'hostname'. The name will form a part of the box's web address."
+	echo -e "\nWe recommend that the name be a subdomain of the domain in your email address, so we're suggesting $DEFAULT_PRIMARY_HOSTNAME."
+	echo -e "\nYou can change it, but we recommend you don't."
 
+	# Prompt the user for the hostname, suggesting the default
+	echo -n "Please enter the hostname [$DEFAULT_PRIMARY_HOSTNAME]: "
+	read PRIMARY_HOSTNAME
+
+	# Use the default if the user input was empty
 	if [ -z "$PRIMARY_HOSTNAME" ]; then
-		# user hit ESC/cancel
-		exit
+		PRIMARY_HOSTNAME=$DEFAULT_PRIMARY_HOSTNAME
 	fi
+
+	# Check if the PRIMARY_HOSTNAME was eventually set or not
+	if [ -z "$PRIMARY_HOSTNAME" ]; then
+		echo "Hostname is required. Exiting."
+		exit 1
+	fi
+
 fi
 
 # If the machine is behind a NAT, inside a VM, etc., it may not know
